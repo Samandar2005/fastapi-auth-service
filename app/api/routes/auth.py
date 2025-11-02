@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from app.models.user import User
 from app.schemas.user import UserOut, Token
 from app.utils.security import get_password_hash, verify_password
 from app.utils.jwt import create_access_token, create_refresh_token
+from app.services.auth import blacklist_token
 import redis.asyncio as redis
 from datetime import timedelta
 
@@ -81,12 +82,18 @@ async def refresh_token(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     current_user: UserOut = Depends(get_current_user),
     redis_client: redis.Redis = Depends(get_redis)
 ):
-    # Access tokenni blacklist'ga qo'shish
-    await redis_client.setex(
-        f"blacklist:{current_user.access_token}",
-        int(timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES).total_seconds()),
-        "true"
-    )
+    # Authorization headerdan tokenni olish
+    auth_header = request.headers.get("authorization")
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Authorization header missing or invalid")
+
+    token = auth_header.split(" ", 1)[1]
+
+    # Tokenni blacklistga qo'shish uchun service funksiyasini chaqiramiz
+    await blacklist_token(token, redis_client)
+    # 204 No Content qaytaramiz (status_code belgilangan)
+    return None

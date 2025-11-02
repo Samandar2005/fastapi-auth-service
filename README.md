@@ -152,9 +152,8 @@ psql -U postgres -d auth_db
 
 Start the FastAPI server:
 ```bash
-uvicorn app.main ..
-
-:app --reload
+# from project root (Windows PowerShell)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Access the API at:
