@@ -25,17 +25,23 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Blacklist'da token borligini tekshirish
-    if await redis_client.get(f"blacklist:{token}"):
-        raise credentials_exception
-
+    # Avval tokenni parsiq qilib, jti va sub ni o'qiymiz, keyin blacklist tekshiramiz
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         email: str = payload.get("sub")
+        jti: str | None = payload.get("jti")
         if email is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
+
+    # Blacklist'da jti borligini tekshirish (agar jti bo'lsa), aks holda token string bo'yicha tekshirish
+    if jti:
+        if await redis_client.get(f"blacklist:{jti}"):
+            raise credentials_exception
+    else:
+        if await redis_client.get(f"blacklist:{token}"):
+            raise credentials_exception
 
     result = await db.execute(select(User).filter(User.email == email))
     user = result.scalars().first()

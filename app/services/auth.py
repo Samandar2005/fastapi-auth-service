@@ -57,11 +57,24 @@ async def blacklist_token(token: str, redis_client: redis.Redis):
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         exp = payload.get("exp")
+        jti = payload.get("jti")
         if exp is None:
             return
     except JWTError:
         return
 
-    expire_in = exp - int(datetime.utcnow().timestamp())
+    # Normalize exp to timestamp (int)
+    now_ts = int(datetime.utcnow().timestamp())
+    if isinstance(exp, (float, int)):
+        exp_ts = int(exp)
+    else:
+        try:
+            exp_ts = int(exp)
+        except Exception:
+            # If exp is unexpected type, skip
+            return
+
+    expire_in = exp_ts - now_ts
     if expire_in > 0:
-        await redis_client.setex(f"blacklist:{token}", expire_in, "true")
+        key = f"blacklist:{jti}" if jti else f"blacklist:{token}"
+        await redis_client.setex(key, expire_in, "true")
